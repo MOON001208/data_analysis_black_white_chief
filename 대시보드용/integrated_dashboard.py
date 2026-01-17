@@ -60,6 +60,7 @@ from population_animated_map import (
 def set_korean_font():
     """한글 폰트 설정 (Windows/Mac/Linux 호환)"""
     import matplotlib.font_manager as fm
+    import matplotlib as mpl
 
     system_name = platform.system()
 
@@ -67,17 +68,37 @@ def set_korean_font():
         # Windows - 맑은 고딕
         font_path = "c:/Windows/Fonts/malgun.ttf"
         if os.path.exists(font_path):
-            font_name = fm.FontProperties(fname=font_path).get_name()
+            font_name = fm.FontProperties(fname=font_path, size=10).get_name()
         else:
             font_name = 'Malgun Gothic'
     elif system_name == "Darwin":
         # Mac - 애플고딕
-        font_name = 'AppleGothic'
+        font_path = '/System/Library/Fonts/AppleGothic.ttf'
+        if os.path.exists(font_path):
+            font_name = fm.FontProperties(fname=font_path, size=10).get_name()
+        else:
+            font_name = 'AppleGothic'
     else:
         # Linux (Streamlit Cloud) - 나눔고딕
+        # matplotlib 캐시 완전 삭제
+        try:
+            cache_dir = mpl.get_cachedir()
+            if cache_dir and os.path.exists(cache_dir):
+                import shutil
+                for file in os.listdir(cache_dir):
+                    if file.startswith('fontlist'):
+                        try:
+                            os.remove(os.path.join(cache_dir, file))
+                        except:
+                            pass
+        except:
+            pass
+
         font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
         if os.path.exists(font_path):
-            font_name = fm.FontProperties(fname=font_path).get_name()
+            # 폰트 매니저에 명시적으로 추가
+            fm.fontManager.addfont(font_path)
+            font_name = fm.FontProperties(fname=font_path, size=10).get_name()
         else:
             font_name = 'NanumGothic'
 
@@ -95,7 +116,7 @@ def set_korean_font():
     plt.rcParams['ytick.color'] = 'black'
     plt.rcParams['text.color'] = 'black'
 
-    # seaborn 폰트 설정
+    # seaborn 폰트 설정 (매우 중요!)
     sns.set_style("whitegrid")
     sns.set_palette("bright")
     sns.set(font=font_name, rc={'axes.unicode_minus': False})
