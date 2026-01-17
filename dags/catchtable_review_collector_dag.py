@@ -1,5 +1,6 @@
 """
 흑백요리사2 - 캐치테이블 리뷰 자동 수집 및 Supabase 적재 DAG
+Airflow 3.0+ 호환 버전
 """
 from datetime import datetime, timedelta
 from airflow import DAG
@@ -285,11 +286,10 @@ def ensure_table_exists(**context):
     print("[Info] Attempting to create table via PostgreSQL direct connection...")
     
     # Extra에서 PostgreSQL 연결 정보 파싱
-    import json as json_module
     extra = {}
     if conn.extra:
         try:
-            extra = json_module.loads(conn.extra)
+            extra = json.loads(conn.extra)
         except:
             pass
     
@@ -400,7 +400,7 @@ def print_catchtable_create_sql():
 
 
 # ==============================================================================
-# DAG Definition
+# DAG Definition (Airflow 3.0+)
 # ==============================================================================
 default_args = {
     'owner': 'airflow',

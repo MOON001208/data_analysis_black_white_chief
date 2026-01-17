@@ -1,5 +1,6 @@
 """
 흑백요리사2 - 서울시 유동인구 자동 수집 및 Supabase 적재 DAG
+Airflow 3.0+ 호환 버전
 """
 from datetime import datetime, timedelta
 from airflow import DAG
@@ -20,7 +21,6 @@ SERVICE = "IotVdata018"
 BASE_URL = "http://openapi.seoul.go.kr:8088/{key}/json/{service}/{start}/{end}/"
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_FILE = os.path.join(BASE_DIR, "seoul_floating_pop_raw3.csv")
-SEOUL_API_CONN_ID = "seoul_api"  # Seoul API Key Connection
 SUPABASE_CONN_ID = "xoosl033110_supabase_conn"
 SUPABASE_TABLE = "seoul_floating_population"
 
@@ -150,7 +150,7 @@ def collect_population_data(**context):
     
     # Seoul API Key 가져오기
     api_key = get_seoul_api_key()
-    print(f"[Info] Seoul API Key loaded from Airflow Connection")
+    print(f"[Info] Seoul API Key loaded from Airflow Variable")
     
     last_collected_time = get_latest_collected_time()
     print(f"Latest collected time: {last_collected_time}")
@@ -167,7 +167,7 @@ def collect_population_data(**context):
     
     for batch_num in range(max_batches):
         end_idx = start_idx + batch_size - 1
-        rows = fetch_data_batch(api_key, start_idx, end_idx)  # api_key 전달
+        rows = fetch_data_batch(api_key, start_idx, end_idx)
         
         if not rows:
             print(f"[Info] No more data at index {start_idx}")
@@ -292,13 +292,12 @@ def ensure_table_exists(**context):
     # Airflow Connection에서 Supabase 정보 가져오기
     conn = BaseHook.get_connection(SUPABASE_CONN_ID)
     
-    # Connection 정보 출력 (디버깅용, 비밀번호 제외)
+    # Connection 정보 출력 (디버깅용)
     print(f"[Info] Connection ID: {SUPABASE_CONN_ID}")
     print(f"[Info] Host: {conn.host}")
     print(f"[Info] Schema: {conn.schema}")
     print(f"[Info] Login: {conn.login}")
     print(f"[Info] Port: {conn.port}")
-    print(f"[Info] Extra: {conn.extra}")
     
     # Supabase REST API로 테이블 존재 확인
     supabase_url = conn.host if conn.host.startswith('http') else f"https://{conn.host}"
@@ -327,16 +326,14 @@ def ensure_table_exists(**context):
     print("[Info] Attempting to create table via PostgreSQL direct connection...")
     
     # Extra에서 PostgreSQL 연결 정보 파싱
-    import json as json_module
     extra = {}
     if conn.extra:
         try:
-            extra = json_module.loads(conn.extra)
+            extra = json.loads(conn.extra)
         except:
             pass
     
     # PostgreSQL 연결 정보 구성
-    # Supabase DB 연결: db.<project-ref>.supabase.co
     db_host = extra.get('db_host') or extra.get('postgres_host')
     db_port = extra.get('db_port', 5432) or conn.port or 5432
     db_name = extra.get('db_name', 'postgres') or conn.schema or 'postgres'
@@ -353,7 +350,6 @@ def ensure_table_exists(**context):
     
     if not db_host:
         print("[Error] PostgreSQL host not found in connection")
-        print("[Action Required] Please create table manually in Supabase SQL Editor:")
         print_create_table_sql()
         return False
     
@@ -403,13 +399,11 @@ def ensure_table_exists(**context):
         
     except ImportError:
         print("[Warning] psycopg2 not installed. Cannot connect to PostgreSQL directly.")
-        print("[Action Required] Please create table manually in Supabase SQL Editor:")
         print_create_table_sql()
         return False
         
     except Exception as e:
         print(f"[Error] PostgreSQL connection failed: {e}")
-        print("[Action Required] Please create table manually in Supabase SQL Editor:")
         print_create_table_sql()
         return False
 
@@ -438,7 +432,7 @@ def print_create_table_sql():
 
 
 # ==============================================================================
-# DAG Definition
+# DAG Definition (Airflow 3.0+)
 # ==============================================================================
 default_args = {
     'owner': 'airflow',
