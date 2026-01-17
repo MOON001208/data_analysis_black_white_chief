@@ -61,46 +61,27 @@ from population_animated_map import (
     create_static_choropleth
 )
 
-# === 한글 폰트 설정 (Streamlit Cloud 호환) ===
+# === 한글 폰트 설정 ===
 def set_korean_font():
     """한글 폰트 설정 (Windows/Mac/Linux 호환)"""
     import matplotlib.font_manager as fm
-    import matplotlib as mpl
 
     system_name = platform.system()
-    font_set = False
     
     if system_name == "Windows":
+        # Windows에서 한글 폰트 직접 지정
         font_path = "c:/Windows/Fonts/malgun.ttf"
         if os.path.exists(font_path):
             fm.fontManager.addfont(font_path)
-            plt.rcParams['font.family'] = 'Malgun Gothic'
-            font_set = True
+        plt.rcParams['font.family'] = 'Malgun Gothic'
+        font_name = 'Malgun Gothic'
     elif system_name == "Darwin":
         plt.rcParams['font.family'] = 'AppleGothic'
-        font_set = True
-    
-    # Linux (Streamlit Cloud) - NanumGothic 폰트 사용
-    if not font_set:
-        # matplotlib 폰트 캐시 재빌드
-        mpl.font_manager._rebuild()
-        
-        # NanumGothic 폰트 찾기
-        font_list = fm.findSystemFonts(fontpaths=None, fontext='ttf')
-        nanum_fonts = [f for f in font_list if 'Nanum' in f or 'nanum' in f]
-        
-        if nanum_fonts:
-            # NanumGothic 폰트 직접 등록
-            for font_path in nanum_fonts:
-                try:
-                    fm.fontManager.addfont(font_path)
-                except:
-                    pass
-            plt.rcParams['font.family'] = 'NanumGothic'
-            font_set = True
-        else:
-            # 폰트가 없으면 sans-serif 사용
-            plt.rcParams['font.family'] = 'sans-serif'
+        font_name = 'AppleGothic'
+    else:
+        # Linux (Streamlit Cloud) - NanumGothic 사용
+        plt.rcParams['font.family'] = 'NanumGothic'
+        font_name = 'NanumGothic'
 
     plt.rcParams['axes.unicode_minus'] = False
 
@@ -114,13 +95,10 @@ def set_korean_font():
     plt.rcParams['ytick.color'] = 'black'
     plt.rcParams['text.color'] = 'black'
 
-    # seaborn 설정
+    # seaborn 폰트 설정
     sns.set_style("whitegrid")
     sns.set_palette("bright")
-    try:
-        sns.set(font=plt.rcParams['font.family'], rc={'axes.unicode_minus': False})
-    except:
-        sns.set(rc={'axes.unicode_minus': False})
+    sns.set(font=font_name, rc={'axes.unicode_minus': False})
 
 set_korean_font()
 
