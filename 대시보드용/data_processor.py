@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 import os
+import glob
 
 # 방영일 정의 (2025-2026 시즌2)
 BROADCAST_DATES = [
@@ -40,21 +41,78 @@ def get_data_path(filename):
     # 없으면 기본값 반환 (에러 발생 예정)
     return data_folder_path
 
-REVIEWS_PATH = get_data_path('reviews_collected_20260114.csv')
+def get_latest_review_file():
+    """최신 리뷰 파일 자동 찾기 (reviews_collected_YYYYMMDD.csv)"""
+    search_paths = [
+        os.path.join(DATA_DIR, 'reviews_collected_*.csv'),  # data/ 폴더
+        os.path.join(PARENT_DIR, '데이터수집code', 'reviews_collected_*.csv'),  # 상위/데이터수집code
+        os.path.join(SCRIPT_DIR, 'reviews_collected_*.csv'),  # 현재 폴더
+    ]
+
+    all_files = []
+    for pattern in search_paths:
+        all_files.extend(glob.glob(pattern))
+
+    if not all_files:
+        # 파일이 없으면 기본값 반환
+        return get_data_path('reviews_collected_20260114.csv')
+
+    # 파일명에서 날짜 추출해서 최신 파일 찾기
+    latest_file = max(all_files, key=lambda x: os.path.basename(x))
+    return latest_file
+
+REVIEWS_PATH = get_latest_review_file()
 POPULATION_PATH = get_data_path('seoul_floating_pop_raw3.csv')
 RESTAURANT_PATH = get_data_path('캐치테이블_가게정보.csv')
 
 
 def load_reviews() -> pd.DataFrame:
-    """리뷰 데이터 로드 및 전처리"""
-    df = pd.read_csv(REVIEWS_PATH, encoding='utf-8-sig')
-    
+    """리뷰 데이터 로드 및 전처리 (모든 reviews_collected_*.csv 병합)"""
+    # 모든 리뷰 파일 찾기
+    search_paths = [
+        os.path.join(DATA_DIR, 'reviews_collected_*.csv'),  # data/ 폴더
+        os.path.join(PARENT_DIR, '데이터수집code', 'reviews_collected_*.csv'),  # 상위/데이터수집code
+        os.path.join(SCRIPT_DIR, 'reviews_collected_*.csv'),  # 현재 폴더
+    ]
+
+    all_files = []
+    for pattern in search_paths:
+        all_files.extend(glob.glob(pattern))
+
+    if not all_files:
+        # 파일이 없으면 기본 경로 시도
+        fallback_path = get_data_path('reviews_collected_20260114.csv')
+        if os.path.exists(fallback_path):
+            all_files = [fallback_path]
+        else:
+            return pd.DataFrame()
+
+    # 모든 파일 병합
+    dfs = []
+    for file_path in all_files:
+        try:
+            temp_df = pd.read_csv(file_path, encoding='utf-8-sig')
+            dfs.append(temp_df)
+        except Exception as e:
+            print(f"파일 로드 실패: {file_path} - {e}")
+
+    if not dfs:
+        return pd.DataFrame()
+
+    df = pd.concat(dfs, ignore_index=True)
+
+    # 중복 제거 (restaurant, reviewer, review_date 기준)
+    df = df.drop_duplicates(subset=['restaurant', 'reviewer', 'review_date'], keep='first')
+
     # Unknown 값 제거
     df = df[df['review_date'] != 'Unknown']
+    df = df[df['reviewer'] != 'Unknown']
     
     # 날짜 형식 변환 (2026.01.13 -> 2026-01-13)
     df['review_date'] = pd.to_datetime(df['review_date'], format='%Y.%m.%d', errors='coerce')
     df = df.dropna(subset=['review_date'])
+    
+    print(f"[리뷰 로드] 총 {len(all_files)}개 파일에서 {len(df)}개 리뷰 로드 (가게 {df['restaurant'].nunique()}개)")
     
     return df
 
@@ -70,18 +128,35 @@ def load_population() -> pd.DataFrame:
     return df
 
 
-def load_restaurants() -> pd.DataFrame:
+def load_restaurants(update_review_count: bool = True) -> pd.DataFrame:
     """가게 정보 로드 및 전처리"""
     df = pd.read_csv(RESTAURANT_PATH, encoding='utf-8-sig')
-    
+
     # 좌표가 있는 가게만 필터링
     df = df.dropna(subset=['lat', 'lon'])
-    
+
     # 리뷰 수 숫자 변환 (쉼표 제거)
     if 'review_count' in df.columns:
         df['review_count'] = df['review_count'].astype(str).str.replace(',', '').str.replace('"', '')
         df['review_count'] = pd.to_numeric(df['review_count'], errors='coerce').fillna(0).astype(int)
-    
+
+    # review_count_history.csv에서 최신 리뷰 개수 업데이트
+    if update_review_count:
+        try:
+            history_path = get_data_path('review_count_history.csv')
+            history_df = pd.read_csv(history_path, encoding='utf-8-sig')
+            # restaurant_name과 review_count만 추출
+            latest_counts = history_df[['restaurant_name', 'review_count']].rename(
+                columns={'restaurant_name': 'restaurant', 'review_count': 'latest_review_count'}
+            )
+            df = df.merge(latest_counts, on='restaurant', how='left')
+            # latest_review_count가 있으면 사용, 없으면 기존 값 유지
+            df['review_count'] = df['latest_review_count'].fillna(df['review_count']).astype(int)
+            df = df.drop(columns=['latest_review_count'])
+        except Exception as e:
+            # 히스토리 파일 로드 실패 시 기존 값 유지
+            pass
+
     return df
 
 
