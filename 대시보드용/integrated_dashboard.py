@@ -13,12 +13,15 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import statsmodels.api as sm
 
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
 # 한글 폰트 자동 설정 (Streamlit Cloud용)
+KOREAN_FONT_LOADED = False
 try:
     import koreanize_matplotlib
+    KOREAN_FONT_LOADED = True
 except ImportError:
-    pass
-from statsmodels.stats.outliers_influence import variance_inflation_factor
+    KOREAN_FONT_LOADED = False
 
 # 모듈 경로 추가
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -67,44 +70,68 @@ def set_korean_font():
     import matplotlib.font_manager as fm
     import matplotlib as mpl
 
-    system_name = platform.system()
-    
-    if system_name == "Windows":
-        # Windows에서 한글 폰트 직접 지정
-        font_path = "c:/Windows/Fonts/malgun.ttf"
-        if os.path.exists(font_path):
-            fm.fontManager.addfont(font_path)
-        plt.rcParams['font.family'] = 'Malgun Gothic'
-        font_name = 'Malgun Gothic'
-    elif system_name == "Darwin":
-        plt.rcParams['font.family'] = 'AppleGothic'
-        font_name = 'AppleGothic'
+    # koreanize_matplotlib이 로드되었으면 사용
+    if KOREAN_FONT_LOADED:
+        plt.rcParams['axes.unicode_minus'] = False
+        font_name = 'NanumGothic'
     else:
-        # Linux (Streamlit Cloud) - NanumGothic 사용
-        # matplotlib 캐시 삭제 후 재빌드
-        cache_dir = mpl.get_cachedir()
-        if cache_dir and os.path.exists(cache_dir):
-            import shutil
-            cache_file = os.path.join(cache_dir, 'fontlist-v330.json')
-            if os.path.exists(cache_file):
-                os.remove(cache_file)
-        
-        # 나눔고딕 폰트 찾기 및 등록
-        nanum_paths = [
-            '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
-            '/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf',
-        ]
-        for font_path in nanum_paths:
+        system_name = platform.system()
+
+        if system_name == "Windows":
+            # Windows에서 한글 폰트 직접 지정
+            font_path = "c:/Windows/Fonts/malgun.ttf"
             if os.path.exists(font_path):
                 fm.fontManager.addfont(font_path)
-        
-        # 폰트 매니저 재빌드
-        fm._load_fontmanager(try_read_cache=False)
-        
-        plt.rcParams['font.family'] = 'NanumGothic'
-        font_name = 'NanumGothic'
+            plt.rcParams['font.family'] = 'Malgun Gothic'
+            font_name = 'Malgun Gothic'
+        elif system_name == "Darwin":
+            plt.rcParams['font.family'] = 'AppleGothic'
+            font_name = 'AppleGothic'
+        else:
+            # Linux (Streamlit Cloud) - NanumGothic 사용
+            # matplotlib 캐시 삭제
+            try:
+                cache_dir = mpl.get_cachedir()
+                if cache_dir and os.path.exists(cache_dir):
+                    import shutil
+                    cache_files = [
+                        'fontlist-v330.json',
+                        'fontlist-v320.json',
+                        'fontlist-v310.json'
+                    ]
+                    for cache_file in cache_files:
+                        full_path = os.path.join(cache_dir, cache_file)
+                        if os.path.exists(full_path):
+                            os.remove(full_path)
+            except:
+                pass
 
-    plt.rcParams['axes.unicode_minus'] = False
+            # 나눔고딕 폰트 찾기 및 등록
+            nanum_paths = [
+                '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+                '/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf',
+                '/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf',
+            ]
+            font_added = False
+            for font_path in nanum_paths:
+                if os.path.exists(font_path):
+                    try:
+                        fm.fontManager.addfont(font_path)
+                        font_added = True
+                    except:
+                        pass
+
+            # 폰트 매니저 재빌드
+            if font_added:
+                try:
+                    fm._load_fontmanager(try_read_cache=False)
+                except:
+                    pass
+
+            plt.rcParams['font.family'] = 'NanumGothic'
+            font_name = 'NanumGothic'
+
+        plt.rcParams['axes.unicode_minus'] = False
 
     # 밝은 배경 설정 (가시성 개선)
     plt.rcParams['figure.facecolor'] = 'white'
@@ -119,7 +146,10 @@ def set_korean_font():
     # seaborn 폰트 설정
     sns.set_style("whitegrid")
     sns.set_palette("bright")
-    sns.set(font=font_name, rc={'axes.unicode_minus': False})
+    try:
+        sns.set(font=font_name, rc={'axes.unicode_minus': False})
+    except:
+        pass
 
 set_korean_font()
 
@@ -221,9 +251,13 @@ CHEF_MAPPING = {
 # === 보조 함수들 ===
 def plot_pass_rate(df, judge_col, judge_name):
     """심사위원 합격률 시각화"""
+    # 그래프 생성 전 폰트 재확인
+    plt.rcParams['font.family'] = plt.rcParams.get('font.family', ['NanumGothic', 'Malgun Gothic', 'AppleGothic', 'sans-serif'])
+    plt.rcParams['axes.unicode_minus'] = False
+
     features = ['how_cook', 'food_category', 'ingrediant', 'temperature']
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    
+
     for i, col in enumerate(features):
         row, col_idx = divmod(i, 2)
         if col in df.columns:
@@ -426,6 +460,10 @@ def main():
         if not plot_df.empty:
             color_palette = {'Google': 'blue', 'Naver': 'green', 'YouTube': 'red'}
 
+            # 그래프 생성 전 폰트 재확인
+            plt.rcParams['font.family'] = plt.rcParams.get('font.family', ['NanumGothic', 'Malgun Gothic', 'AppleGothic', 'sans-serif'])
+            plt.rcParams['axes.unicode_minus'] = False
+
             fig = sns.relplot(
                 data=plot_df, x="Date", y="Value", hue="Source", col="Chef",
                 kind="line", palette=color_palette,
@@ -436,6 +474,9 @@ def main():
             # 각 쉐프별로 탈락 시점 표시
             for ax in fig.axes.flat:
                 chef_title = ax.get_title().replace('Chef = ', '')
+                # 제목 업데이트 (한글 적용 확인)
+                ax.set_title(f'Chef = {chef_title}')
+
                 if chef_title in elimination_info:
                     elim_date = elimination_info[chef_title]
                     ax.axvline(x=elim_date, color='red', linestyle='--', linewidth=2, alpha=0.7)
@@ -506,6 +547,10 @@ def main():
 
             pivot_survival = survival_rates.pivot_table(index='round', columns='food_category', values='survival_rate_pct')
 
+            # 그래프 생성 전 폰트 재확인
+            plt.rcParams['font.family'] = plt.rcParams.get('font.family', ['NanumGothic', 'Malgun Gothic', 'AppleGothic', 'sans-serif'])
+            plt.rcParams['axes.unicode_minus'] = False
+
             fig, ax = plt.subplots(figsize=(12, 8))
             sns.heatmap(pivot_survival, annot=True, fmt='.1f', cmap='RdYlGn', vmin=0, vmax=100, ax=ax)
             ax.set_title('라운드별 요리 장르 생존율 (%)', fontsize=14)
@@ -548,6 +593,10 @@ def main():
 
             match_type_stats = df_clean.groupby(['match_type', 'food_category'])['is_survived'].agg(['count', 'mean']).reset_index()
             match_type_stats['survival_rate_pct'] = match_type_stats['mean'] * 100
+
+            # 그래프 생성 전 폰트 재확인
+            plt.rcParams['font.family'] = plt.rcParams.get('font.family', ['NanumGothic', 'Malgun Gothic', 'AppleGothic', 'sans-serif'])
+            plt.rcParams['axes.unicode_minus'] = False
 
             fig, ax = plt.subplots(figsize=(12, 6))
             sns.barplot(data=match_type_stats, x='food_category', y='survival_rate_pct', hue='match_type', ax=ax)
@@ -630,6 +679,10 @@ def main():
 
                 if model_an:
                     st.markdown("##### 📉 잔차(오차) 분석")
+                    # 그래프 생성 전 폰트 재확인
+                    plt.rcParams['font.family'] = plt.rcParams.get('font.family', ['NanumGothic', 'Malgun Gothic', 'AppleGothic', 'sans-serif'])
+                    plt.rcParams['axes.unicode_minus'] = False
+
                     fig_res, ax = plt.subplots(figsize=(8, 4))
                     # Use numpy arrays to prevent index alignment issues with seaborn regplot lowess
                     sns.regplot(x=np.array(model_an.predict()), y=np.array(model_an.resid_pearson), lowess=True,
@@ -659,6 +712,10 @@ def main():
 
                 if model_back:
                     st.markdown("##### 📉 잔차(오차) 분석")
+                    # 그래프 생성 전 폰트 재확인
+                    plt.rcParams['font.family'] = plt.rcParams.get('font.family', ['NanumGothic', 'Malgun Gothic', 'AppleGothic', 'sans-serif'])
+                    plt.rcParams['axes.unicode_minus'] = False
+
                     fig_res_b, ax_b = plt.subplots(figsize=(8, 4))
                     # Use numpy arrays to prevent index alignment issues
                     sns.regplot(x=np.array(model_back.predict()), y=np.array(model_back.resid_pearson), lowess=True,
