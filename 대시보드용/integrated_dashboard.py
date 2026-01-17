@@ -186,7 +186,7 @@ def load_survival_data():
 @st.cache_data
 def load_genre_survival_data():
     """요리 장르별 생존율 데이터"""
-    file_path = get_data_path('3번문제완성본.csv')
+    file_path = get_data_path('셰프서바이벌결과요약.csv')
     if not os.path.exists(file_path):
         return None
     df = pd.read_csv(file_path)
@@ -801,7 +801,7 @@ def main():
             else:
                 st.caption("📐 **계산 공식**: 방영 후 리뷰 수 - 방영 전 리뷰 수 → 실제로 늘어난 리뷰 개수를 보여줍니다")
 
-            fig_heatmap = create_review_heatmap(review_changes, restaurants, value_column=value_option)
+            fig_heatmap = create_review_heatmap(review_changes, restaurants, value_column=value_option, min_reviews=0)
             st.plotly_chart(fig_heatmap, use_container_width=True)
 
             st.subheader("🏆 리뷰 증가율 TOP 10")
