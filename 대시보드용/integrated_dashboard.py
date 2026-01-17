@@ -65,6 +65,7 @@ from population_animated_map import (
 def set_korean_font():
     """한글 폰트 설정 (Windows/Mac/Linux 호환)"""
     import matplotlib.font_manager as fm
+    import matplotlib as mpl
 
     system_name = platform.system()
     
@@ -80,6 +81,26 @@ def set_korean_font():
         font_name = 'AppleGothic'
     else:
         # Linux (Streamlit Cloud) - NanumGothic 사용
+        # matplotlib 캐시 삭제 후 재빌드
+        cache_dir = mpl.get_cachedir()
+        if cache_dir and os.path.exists(cache_dir):
+            import shutil
+            cache_file = os.path.join(cache_dir, 'fontlist-v330.json')
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+        
+        # 나눔고딕 폰트 찾기 및 등록
+        nanum_paths = [
+            '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+            '/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf',
+        ]
+        for font_path in nanum_paths:
+            if os.path.exists(font_path):
+                fm.fontManager.addfont(font_path)
+        
+        # 폰트 매니저 재빌드
+        fm._load_fontmanager(try_read_cache=False)
+        
         plt.rcParams['font.family'] = 'NanumGothic'
         font_name = 'NanumGothic'
 
