@@ -235,6 +235,33 @@ def plot_pass_rate(df, judge_col, judge_name):
     plt.tight_layout()
     return fig
 
+def create_pass_rate_summary(df, judge_col):
+    """심사위원 합격률 통계표 생성"""
+    features = ['how_cook', 'food_category', 'ingrediant', 'temperature']
+    feature_names = {
+        'how_cook': '조리법',
+        'food_category': '음식 카테고리',
+        'ingrediant': '주재료',
+        'temperature': '온도'
+    }
+
+    summary_data = []
+    for col in features:
+        if col in df.columns:
+            stats = df.groupby(col).agg({
+                judge_col: ['count', 'sum', 'mean']
+            }).reset_index()
+            stats.columns = [col, '총 시도 횟수', '합격 횟수', '합격률']
+            stats['합격률'] = (stats['합격률'] * 100).round(1)
+            stats = stats.sort_values('합격률', ascending=False)
+            stats.insert(0, '구분', feature_names[col])
+            stats.rename(columns={col: '값'}, inplace=True)
+            summary_data.append(stats)
+
+    if summary_data:
+        return pd.concat(summary_data, ignore_index=True)
+    return pd.DataFrame()
+
 def run_logistic_regression(df, target_col):
     """로지스틱 회귀분석"""
     if target_col == 'an':
@@ -604,11 +631,39 @@ def main():
                 fig_an = plot_pass_rate(df[df['is_an'] == 1], 'an', '안성재')
                 st.pyplot(fig_an)
                 st.caption("📝 **해석**: 각 막대의 높이는 합격률을 의미합니다. 안성재 심사위원은 특정 조리법(조림 등)에서 확연히 높은 합격률을 보이는 경향이 있습니다.")
+
+                # 안성재 통계표
+                with st.expander("📊 상세 통계표 (시도 횟수 포함)"):
+                    summary_an = create_pass_rate_summary(df[df['is_an'] == 1], 'an')
+                    if not summary_an.empty:
+                        st.dataframe(summary_an, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("통계 데이터가 없습니다.")
+
             with col2:
                 st.subheader("백종원 심사위원")
                 fig_back = plot_pass_rate(df[df['is_back'] == 1], 'back', '백종원')
                 st.pyplot(fig_back)
                 st.caption("📝 **해석**: 백종원 심사위원은 퓨전 및 다양한 조리법에서 상대적으로 고른 합격률을 보이지만, 특정 '맛'의 포인트(예: 중식 튀김)를 선호함을 알 수 있습니다.")
+
+                # 백종원 통계표
+                with st.expander("📊 상세 통계표 (시도 횟수 포함)"):
+                    summary_back = create_pass_rate_summary(df[df['is_back'] == 1], 'back')
+                    if not summary_back.empty:
+                        st.dataframe(summary_back, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("통계 데이터가 없습니다.")
+
+            st.divider()
+            st.warning("""
+            ⚠️ **합격률 해석 시 주의사항**
+
+            합격률이 1.0(100%)으로 표시되는 경우는 해당 조건의 데이터가 1개뿐인데 그것이 합격이라서 합격률이 100%가 된 것입니다.
+            예를 들어, '5-2R 당근케이크'처럼 특정 조리법이나 재료 조합의 데이터가 극히 적은 경우(1~2개),
+            통계적 유의미함이 떨어지므로 **샘플 수가 충분한 조건**을 위주로 해석해야 합니다.
+
+            💡 **Tip**: 아래 '📊 상세 통계표'를 열어보면 각 조건별 **총 시도 횟수**와 **합격 횟수**를 확인할 수 있습니다.
+            """)
 
         with tab2:
             col_l, col_r = st.columns(2)
@@ -619,11 +674,9 @@ def main():
                 st.subheader("🔹 안성재 심사위원 모델")
                 st.markdown("##### 📋 통계 분석 결과표")
                 st.dataframe(summary_an.style.map(lambda x: 'background-color: yellow' if x < 0.05 else '', subset=['P-value']), height=400)
-                st.info("""
-                💡 **결과 해석 가이드**:
-                - **P-value (노란색)**: 0.05 미만이면 결과가 통계적으로 매우 유의미함을 뜻합니다.
-                - **Odds Ratio**: 1보다 크면 합격 확률을 **높이는** 요인, 1보다 작으면 **낮추는** 요인입니다.
-                """)
+                st.info("""💡 **결과 해석 가이드**:
+- **P-value (노란색)**: 0.05 미만이면 결과가 통계적으로 매우 유의미함을 뜻합니다.
+- **Odds Ratio**: 1보다 크면 합격 확률을 **높이는** 요인, 1보다 작으면 **낮추는** 요인입니다.""")
 
                 if X_an is not None:
                     with st.expander("다중공선성(VIF) 진단"):
@@ -648,11 +701,9 @@ def main():
                 st.subheader("🔸 백종원 심사위원 모델")
                 st.markdown("##### 📋 통계 분석 결과표")
                 st.dataframe(summary_back.style.map(lambda x: 'background-color: yellow' if x < 0.05 else '', subset=['P-value']), height=400)
-                st.info("""
-                💡 **결과 해석 가이드**:
-                - **P-value (노란색)**: 이 값이 작을수록 해당 변수가 합격/불합격에 미치는 영향이 확실합니다.
-                - **Odds Ratio**: 숫자가 클수록 해당 요리를 했을 때 합격할 확률이 압도적으로 높아집니다.
-                """)
+                st.info("""💡 **결과 해석 가이드**:
+- **P-value (노란색)**: 이 값이 작을수록 해당 변수가 합격/불합격에 미치는 영향이 확실합니다.
+- **Odds Ratio**: 숫자가 클수록 해당 요리를 했을 때 합격할 확률이 압도적으로 높아집니다.""")
 
                 if X_back is not None:
                     with st.expander("다중공선성(VIF) 진단"):
