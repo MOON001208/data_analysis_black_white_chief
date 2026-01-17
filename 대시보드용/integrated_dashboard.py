@@ -746,10 +746,17 @@ def main():
             daily_pop = get_daily_population_by_district(population)
             geojson = get_geojson()
 
-        # 탭
-        tab1, tab2, tab3 = st.tabs(["📊 리뷰 히트맵", "🗺️ 유동인구 지도", "📈 가게 분석"])
-        
-        with tab1:
+        # 탭 선택 (selectbox 방식으로 변경 - Streamlit Cloud 호환성 개선)
+        broadcast_tab_selection = st.selectbox(
+            "분석 내용 선택",
+            options=["📊 리뷰 히트맵", "🗺️ 유동인구 지도", "📈 가게 분석"],
+            key="broadcast_tab_selection",
+            label_visibility="collapsed"
+        )
+
+        st.divider()
+
+        if broadcast_tab_selection == "📊 리뷰 히트맵":
             st.header("📊 방영일별 리뷰 변화")
             st.info("""
             **💡 이 대시보드는?**
@@ -806,8 +813,8 @@ def main():
                 }),
                 hide_index=True
             )
-        
-        with tab2:
+
+        elif broadcast_tab_selection == "🗺️ 유동인구 지도":
             st.header("🗺️ 서울시 유동인구 변화 지도")
             st.info("""
             **💡 이 대시보드는?**
@@ -881,8 +888,8 @@ def main():
             rest_display = restaurants[['restaurant', 'chief_info', 'category', 'location', 'review_count']].copy()
             rest_display.columns = ['가게명', '셰프', '카테고리', '위치', '리뷰수']
             st.dataframe(rest_display, hide_index=True)
-        
-        with tab3:
+
+        elif broadcast_tab_selection == "📈 가게 분석":
             st.header("📈 개별 가게 분석")
             st.info("""
             **💡 이 대시보드는?**
