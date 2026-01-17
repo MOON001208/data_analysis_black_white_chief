@@ -65,6 +65,7 @@ from population_animated_map import (
 def set_korean_font():
     """한글 폰트 설정 (Windows/Mac/Linux 호환)"""
     import matplotlib.font_manager as fm
+    import matplotlib as mpl
 
     system_name = platform.system()
     font_set = False
@@ -79,19 +80,27 @@ def set_korean_font():
         plt.rcParams['font.family'] = 'AppleGothic'
         font_set = True
     
-    # Linux (Streamlit Cloud) - 여러 폰트 시도
+    # Linux (Streamlit Cloud) - NanumGothic 폰트 사용
     if not font_set:
-        available_fonts = [f.name for f in fm.fontManager.ttflist]
-        korean_fonts = ['NanumGothic', 'Nanum Gothic', 'NanumBarunGothic', 
-                       'Noto Sans CJK KR', 'DejaVu Sans']
-        for kf in korean_fonts:
-            if kf in available_fonts:
-                plt.rcParams['font.family'] = kf
-                font_set = True
-                break
-        if not font_set:
-            # 폰트가 없으면 기본값 사용 (한글 깨질 수 있음)
-            plt.rcParams['font.family'] = 'DejaVu Sans'
+        # matplotlib 폰트 캐시 재빌드
+        mpl.font_manager._rebuild()
+        
+        # NanumGothic 폰트 찾기
+        font_list = fm.findSystemFonts(fontpaths=None, fontext='ttf')
+        nanum_fonts = [f for f in font_list if 'Nanum' in f or 'nanum' in f]
+        
+        if nanum_fonts:
+            # NanumGothic 폰트 직접 등록
+            for font_path in nanum_fonts:
+                try:
+                    fm.fontManager.addfont(font_path)
+                except:
+                    pass
+            plt.rcParams['font.family'] = 'NanumGothic'
+            font_set = True
+        else:
+            # 폰트가 없으면 sans-serif 사용
+            plt.rcParams['font.family'] = 'sans-serif'
 
     plt.rcParams['axes.unicode_minus'] = False
 
