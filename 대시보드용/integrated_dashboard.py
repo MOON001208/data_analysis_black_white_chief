@@ -666,6 +666,7 @@ def main():
             """)
 
         with tab2:
+            st.warning("⚠️ **주의사항**: 표본이 적어 회귀 진단이 맞지않기에 정확한 모델링이 아니며 재미로 보길 바랍니다.")
             col_l, col_r = st.columns(2)
 
             model_an, X_an, y_an = run_logistic_regression(df, 'an')
