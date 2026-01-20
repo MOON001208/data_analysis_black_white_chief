@@ -100,6 +100,9 @@
 
 
 ---
+## 3.  분석 과정 및 대시보드
+https://black-white-chief-dashboard.streamlit.app/
+---
 
 ## 4.  트러블 슈팅 (Problem Solving)
 
