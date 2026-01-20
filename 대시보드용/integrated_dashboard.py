@@ -476,8 +476,8 @@ def main():
                 ax.tick_params(axis='x', rotation=45)
 
             # 제목을 오른쪽 아래로 이동
-            fig.fig.text(0.95, 0.02, "쉐프별 검색 트렌드\n(Naver: 초록, Google: 파랑, YouTube: 빨강)",
-                        fontsize=12, ha='right', va='bottom')
+            #fig.fig.text(0.95, 0.02, "쉐프별 검색 트렌드\n(Naver: 초록, Google: 파랑, YouTube: 빨강)",
+            #            fontsize=12, ha='right', va='bottom')
             st.pyplot(fig.fig)
 
             st.markdown("""
