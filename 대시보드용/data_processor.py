@@ -25,11 +25,17 @@ PARENT_DIR = os.path.dirname(SCRIPT_DIR)
 DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
 
 def get_data_path(filename):
-    """데이터 파일 경로 찾기 (data/ 폴더 우선, 없으면 상위 폴더)"""
+    """데이터 파일 경로 찾기 (data/ 폴더 우선, 그 다음 데이터수집code, 없으면 상위 폴더)"""
     # 1순위: 대시보드용/data/ 폴더
     data_folder_path = os.path.join(DATA_DIR, filename)
     if os.path.exists(data_folder_path):
         return data_folder_path
+        
+    # 1.5순위: 데이터수집code 폴더 (실시간 수집 데이터 우선)
+    collection_code_path = os.path.join(PARENT_DIR, '데이터수집code', filename)
+    if os.path.exists(collection_code_path):
+        return collection_code_path
+
     # 2순위: 상위 폴더 (로컬)
     parent_path = os.path.join(PARENT_DIR, filename)
     if os.path.exists(parent_path):
@@ -259,6 +265,10 @@ def calculate_population_changes(df_pop: pd.DataFrame) -> pd.DataFrame:
 
 def get_daily_population_by_district(df_pop: pd.DataFrame) -> pd.DataFrame:
     """일별 자치구별 유동인구 집계 (애니메이션용)"""
+    # 불필요한 데이터 필터링 (서울대공원 등)
+    if 'AUTONOMOUS_DISTRICT' in df_pop.columns:
+        df_pop = df_pop[df_pop['AUTONOMOUS_DISTRICT'] != 'Seoul_Grand_Park']
+
     df_pop['date'] = pd.to_datetime(df_pop['SENSING_TIME']).dt.date
     
     daily_pop = df_pop.groupby(['date', 'AUTONOMOUS_DISTRICT']).agg({
@@ -267,6 +277,9 @@ def get_daily_population_by_district(df_pop: pd.DataFrame) -> pd.DataFrame:
     
     daily_pop.columns = ['date', 'district', 'population']
     daily_pop['date'] = pd.to_datetime(daily_pop['date'])
+    
+    # 애니메이션을 위해 날짜순 정렬 필수
+    daily_pop = daily_pop.sort_values(by=['date', 'district'])
     
     return daily_pop
 
