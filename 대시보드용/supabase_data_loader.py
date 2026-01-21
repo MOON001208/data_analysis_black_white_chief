@@ -1,6 +1,7 @@
 """
 흑백요리사2 - Supabase 연동 데이터 로더
 """
+import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
@@ -12,8 +13,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Supabase 설정
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_URL = st.secrets("SUPABASE_URL")
+SUPABASE_KEY = st.secrets("SUPABASE_KEY")
 
 # 방영일 정의 (2025-2026 시즌2)
 BROADCAST_DATES = [
