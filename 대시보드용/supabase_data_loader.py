@@ -12,9 +12,14 @@ from dotenv import load_dotenv
 # .env 파일에서 환경변수 로드
 load_dotenv()
 
-# Supabase 설정
-SUPABASE_URL = st.secrets("SUPABASE_URL")
-SUPABASE_KEY = st.secrets("SUPABASE_KEY")
+# Supabase 설정 (Streamlit Secrets 우선, 없으면 .env 사용)
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+except Exception:
+    # 로컬에서 secrets.toml이 없거나 Streamlit 환경이 아닌 경우
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 # 방영일 정의 (2025-2026 시즌2)
 BROADCAST_DATES = [
