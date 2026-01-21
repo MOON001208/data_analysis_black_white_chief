@@ -87,7 +87,12 @@ def create_animated_population_map(
     # 날짜 문자열로 변환 (애니메이션용)
     df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
     
-    # Choropleth 애니메이션 생성 - 색상 대비 강화
+    # Choropleth 애니메이션 생성
+    # 색상 스케일: 인구수(절대값)이므로 단색 계열(Reds) 사용 권장
+    # 애니메이션 흔들림 방지를 위해 range_color 고정
+    pop_min = df['population'].min()
+    pop_max = df['population'].max()
+
     fig = px.choropleth_mapbox(
         df,
         geojson=geojson,
@@ -98,9 +103,10 @@ def create_animated_population_map(
         mapbox_style='carto-positron',
         center={'lat': 37.5665, 'lon': 126.9780},
         zoom=10,
-        opacity=0.8,
-        color_continuous_scale=[[0, '#0000FF'], [0.5, '#FFFFFF'], [1, '#FF0000']],  # 파랑-흰색-빨강
-        labels={'population': '유동인구', 'district': '자치구'},
+        opacity=0.7,
+        color_continuous_scale='Reds',
+        range_color=[pop_min, pop_max],
+        labels={'population': '유동인구(방문자수)', 'district': '자치구'},
         title='서울시 자치구별 일별 유동인구'
     )
     
@@ -295,9 +301,23 @@ def create_broadcast_comparison_map(
     after_avg = after_df.groupby('district')['population'].mean().reset_index()
     after_avg.columns = ['district', 'population']
     
+    import numpy as np
+
     # 변화율 계산
     merged = before_avg.merge(after_avg, on='district', suffixes=('_before', '_after'))
-    merged['change_rate'] = ((merged['population_after'] - merged['population_before']) / merged['population_before']) * 100
+    
+    # 벡터화 연산으로 안전하게 계산 (Infinity 방지)
+    # 1. 분모가 0이 아닌 경우: 일반적인 변화율 계산
+    # 2. 분모가 0이고 분자가 0보다 큰 경우: 100% (신규 유입 처리)
+    # 3. 그 외 (둘 다 0): 0%
+    
+    # 일단 기본적인 나눗셈 수행 (0으로 나누면 inf 또는 nan 발생)
+    merged['change_rate'] = (merged['population_after'] - merged['population_before']) / merged['population_before'] * 100
+    
+    # Inf, -Inf, NaN 처리
+    merged['change_rate'] = merged['change_rate'].replace([np.inf, -np.inf], 100.0) # 분모 0, 분자 > 0 인 경우로 간주 (단순화)
+    merged['change_rate'] = merged['change_rate'].fillna(0.0) # 분모 0, 분자 0 인 경우 등
+
     
     # 변화율 지도 - 색상 대비 강화 (파랑=감소, 빨강=증가)
     fig = px.choropleth_mapbox(
