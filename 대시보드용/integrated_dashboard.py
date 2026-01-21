@@ -55,6 +55,7 @@ from population_animated_map import (
     create_broadcast_comparison_map,
     create_static_choropleth
 )
+from supabase_data_loader import load_chef_survival_results_from_supabase, load_trend_data_from_supabase
 
 # === 한글 폰트 설정 ===
 def set_korean_font():
@@ -176,20 +177,18 @@ def load_all_data():
 @st.cache_data
 def load_survival_data():
     """서바이벌 데이터 로드"""
-    file_path = get_data_path('셰프서바이벌결과요약.csv')
-    if not os.path.exists(file_path):
+    df = load_chef_survival_results_from_supabase()
+    if df is None or df.empty:
         return None
-    df = pd.read_csv(file_path)
     df_clean = df[df['food'] != '-'].copy()
     return df_clean
 
 @st.cache_data
 def load_genre_survival_data():
     """요리 장르별 생존율 데이터"""
-    file_path = get_data_path('셰프서바이벌결과요약.csv')
-    if not os.path.exists(file_path):
+    df = load_chef_survival_results_from_supabase()
+    if df is None or df.empty:
         return None
-    df = pd.read_csv(file_path)
     df['is_survived'] = df['is_alive'].apply(lambda x: 1 if x in ['생존'] else 0)
     cols = ['round', 'name', 'match_type', 'food_category', 'is_survived', 'is_alive']
     df_analysis = df[cols].copy()
@@ -215,7 +214,7 @@ def get_geojson():
 CHEF_MAPPING = {
     'akrl': '아기맹수', 'choi': '최강록', 'hoo': '후덕죽', 'im': '임성근',
     'jeong': '정호영', 'sam': '샘킴', 'seon': '선재스님', 'son': '손종원',
-    'yo': '요리괴물', 'yoon': '윤준모'
+    'yo': '요리괴물', 'yoon': '윤주모'
 }
 
 # === 보조 함수들 ===
@@ -298,40 +297,34 @@ def create_summary_df(model):
     return summary_df.sort_values(by="P-value")
 
 def load_trend_data():
-    """트렌드 데이터 로드"""
-    # 트렌드 데이터 폴더 찾기 (data/흑백요리사트렌드추이 또는 상위폴더/흑백요리사트렌드추이)
-    base_path = os.path.join(SCRIPT_DIR, 'data', '흑백요리사트렌드추이')
-    if not os.path.exists(base_path):
-        base_path = os.path.join(os.path.dirname(SCRIPT_DIR), '흑백요리사트렌드추이')
-    if not os.path.exists(base_path):
+    """트렌드 데이터 로드 (Only Supabase)"""
+    # 모든 소스(datalab, Google, YouTube)가 DB에 저장되어 있다고 가정
+    df = load_trend_data_from_supabase()
+    
+    if df.empty:
         return pd.DataFrame()
+        
+    # Supabase 컬럼 -> 대시보드 컬럼 매핑 (한글 -> 영문)
+    column_mapping = {
+        '출연자': 'Chef',
+        '날짜': 'Date',
+        '값': 'Value',
+        '소스': 'Source'
+    }
+    
+    # 필요한 컬럼 확인
+    if not all(col in df.columns for col in column_mapping.keys()):
+        return df
 
-    all_data = []
-    for prefix, chef_name in CHEF_MAPPING.items():
-        for source_type, source_name in [('_datalab.csv', 'Naver'), ('_google.csv', 'Google'), ('_youtube.csv', 'YouTube')]:
-            f_path = os.path.join(base_path, f"{prefix}{source_type}")
-            if not os.path.exists(f_path):
-                continue
-            try:
-                try:
-                    df_source = pd.read_csv(f_path, encoding='utf-8')
-                except:
-                    df_source = pd.read_csv(f_path, encoding='cp949')
-                
-                if df_source.shape[1] >= 2:
-                    df_source = df_source.rename(columns={df_source.columns[0]: 'Date', df_source.columns[1]: 'Value'})
-                    df_source['Source'] = source_name
-                    df_source['Chef'] = chef_name
-                    df_source = df_source.dropna(subset=['Value'])
-                    df_source['Value'] = pd.to_numeric(df_source['Value'], errors='coerce')
-                    all_data.append(df_source)
-            except Exception as e:
-                pass
-
-    if not all_data:
-        return pd.DataFrame()
-    final_df = pd.concat(all_data, ignore_index=True)
+    final_df = df.rename(columns=column_mapping)
+    
+    # 데이터 타입 변환
     final_df['Date'] = pd.to_datetime(final_df['Date'])
+    final_df['Value'] = pd.to_numeric(final_df['Value'], errors='coerce')
+    
+    # 이름 통합 (술 빚는 윤주모 -> 윤주모)
+    final_df['Chef'] = final_df['Chef'].replace('술 빚는 윤주모', '윤주모')
+    
     return final_df
 
 # === 메인 화면 ===
@@ -347,7 +340,8 @@ def main():
             "📊 라운드 × 장르별 생존율 분석",
             "🏁 심사위원 합격 예측 분석",
             "📊 방송효과분석"
-        ]
+        ],
+        key="main_menu_selection"
     )
     
     st.sidebar.markdown("---")
@@ -414,9 +408,9 @@ def main():
             '임성근': '임성근',
             '정호영': '정호영',
             '후덕죽': '후덕죽',
-            '술 빚는 윤주모': '윤준모',
-            '윤주모': '윤준모',
-            '윤준모': '윤준모',
+            '술 빚는 윤주모': '윤주모',
+            '윤주모': '윤주모',
+            '윤준모': '윤주모',
             '이하성 (요리괴물)': '요리괴물',
             '요리괴물': '요리괴물',
             '최강록': '최강록'
@@ -441,7 +435,7 @@ def main():
             all_chefs = sorted(df_trend['Chef'].unique())
             selected_chefs = st.multiselect("쉐프 선택", options=all_chefs, default=all_chefs[:3])
         with col2:
-            all_sources = ['Naver', 'Google', 'YouTube']
+            all_sources = ['datalab', 'google', 'youtube']
             selected_sources = st.multiselect("소스 선택", options=all_sources, default=all_sources)
 
         plot_df = df_trend.copy()
@@ -450,41 +444,43 @@ def main():
         if selected_sources:
             plot_df = plot_df[plot_df['Source'].isin(selected_sources)]
 
+
+        # 소스명 변경 (datalab -> Naver)
+        plot_df['Source'] = plot_df['Source'].replace('datalab', 'Naver')
+
         if not plot_df.empty:
-            color_palette = {'Google': 'blue', 'Naver': 'green', 'YouTube': 'red'}
+            color_palette = {'google': 'blue', 'Naver': 'green', 'youtube': 'red'}
 
             fig = sns.relplot(
                 data=plot_df, x="Date", y="Value", hue="Source", col="Chef",
                 kind="line", palette=color_palette,
                 col_wrap=3, height=4, aspect=1.5,
-                facet_kws={'sharey': False, 'sharex': True}
+                facet_kws={'sharey': False, 'sharex': True},
+                errorbar=None  # 오차범위(그림자) 제거 (ci=None deprecated in new seaborn)
             )
 
-            # 각 쉐프별로 탈락 시점 표시
+            # 각 쉐프별로 탈락 시점 및 기간 표시
             for ax in fig.axes.flat:
                 chef_title = ax.get_title().replace('Chef = ', '')
-                # 제목 업데이트 (한글 적용 확인)
                 ax.set_title(f'Chef = {chef_title}')
 
                 if chef_title in elimination_info:
                     elim_date = elimination_info[chef_title]
-                    ax.axvline(x=elim_date, color='red', linestyle='--', linewidth=2, alpha=0.7)
-                    # 탈락 표시 텍스트
-                    y_max = ax.get_ylim()[1]
-                    ax.text(elim_date, y_max * 0.95, '탈락', rotation=0,
-                           verticalalignment='top', color='red', fontsize=9, fontweight='bold')
+                    # 탈락 시점이 표시 범위 내에 있을 때만 표시
+                    if pd.Timestamp('2025-12-09') <= elim_date <= pd.Timestamp('2026-01-20'):
+                        ax.axvline(x=elim_date, color='red', linestyle='--', linewidth=2, alpha=0.7)
+                        y_max = ax.get_ylim()[1]
+                        ax.text(elim_date, y_max * 0.95, '탈락', rotation=0,
+                               horizontalalignment='right', verticalalignment='top', color='red', fontsize=9, fontweight='bold')
                 ax.tick_params(axis='x', rotation=45)
 
-            # 제목을 오른쪽 아래로 이동
-            #fig.fig.text(0.95, 0.02, "쉐프별 검색 트렌드\n(Naver: 초록, Google: 파랑, YouTube: 빨강)",
-            #            fontsize=12, ha='right', va='bottom')
             st.pyplot(fig.fig)
 
             st.markdown("""
             **🎨 색상 가이드:**
             - 🟢 **Naver**: 네이버 데이터랩 검색량
-            - 🔵 **Google**: 구글 트렌드
-            - 🔴 **YouTube**: 유튜브 검색량
+            - 🔵 **google**: 구글 트렌드
+            - 🔴 **youtube**: 유튜브 검색량
             - 🔴 **빨간 점선**: 해당 쉐프 탈락 시점
             """)
 
