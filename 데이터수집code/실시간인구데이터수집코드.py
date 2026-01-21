@@ -27,7 +27,7 @@ OUTPUT_FILE = "seoul_floating_pop_raw3.csv"
 # ==============================================================================
 # MAPPINGS (English -> Korean)
 # ==============================================================================
-
+ 
 # 1. Gu (Autonomous District) Mapping - Standard 25 Districts
 GU_MAPPING_RAW = {
     'Gangnam-gu': '강남구', 'Gangdong-gu': '강동구', 'Gangbuk-gu': '강북구',
