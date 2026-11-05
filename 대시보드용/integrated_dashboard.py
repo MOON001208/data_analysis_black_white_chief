@@ -331,8 +331,8 @@ def main():
         **💡 주요 기능**
         - 📅 방영일 기준 7일 전후 분석
         - 🗺️ 인터랙티브 애니메이션 지도
-        - 📊 통계 유의성 기반 인사이트
-        - 🎯 심사위원별 합격 공략법
+        - 📊 표본 수와 해석 한계를 함께 보는 분석
+        - 🎯 심사위원별 합격률과 탐색적 회귀분석
         """)
 
         changes = load_review_changes()
@@ -570,17 +570,14 @@ def main():
             st.caption("🔎 **그래프 보는 법**: 막대 높이가 높을수록 해당 장르의 생존율이 높습니다.")
 
         else:
-            st.markdown("""
-            ### 🔍 주요 인사이트
-
-            **✅ 장르의 유불리**
-            - 특정 라운드 미션에 따라 장르별 유리함이 달라집니다.
-            - 3-1R(재료 대결), 5-2R(무한 요리 지옥)에서는 창의성이 요구되는 **퓨전음식**이 유리
-
-            **✅ 전략 제안**
-            - 초반: 본인의 주력 장르(정통성)로 어필
-            - 중반 이후: 팀전/변수 미션에 **퓨전/창의적 접근** 가미
-            """)
+            st.subheader("🔍 표본 수를 함께 보는 장르별 결과")
+            genre_summary = df_clean.groupby('food_category')['is_survived'].agg(
+                참가자='count', 생존자='sum', 생존율='mean'
+            ).reset_index()
+            genre_summary['생존율 (%)'] = (genre_summary.pop('생존율') * 100).round(1)
+            genre_summary = genre_summary.rename(columns={'food_category': '요리 장르'})
+            st.dataframe(genre_summary.sort_values('참가자', ascending=False), hide_index=True, use_container_width=True)
+            st.caption("장르별 참가자 수와 경기 조건이 다릅니다. 이 표의 차이만으로 특정 장르가 생존에 유리하다고 결론 내릴 수 없습니다.")
 
     # === 심사위원 예측 (4번 메뉴) ===
     elif menu == "🏁 심사위원 합격 예측 분석":
@@ -589,7 +586,7 @@ def main():
         st.info("""
         **💡 이 대시보드는?**
         **백종원**, **안성재** 두 심사위원의 심사 성향과 합격 기준을 통계적 기법(로지스틱 회귀분석)으로 분석합니다.
-        어떤 조리법과 재료가 합격 확률을 높이는지 데이터로 확인할 수 있습니다.
+        조리법과 재료에 따른 관찰된 합격률을 비교하고, 탐색적 회귀 결과를 확인할 수 있습니다.
         """)
 
         df = load_survival_data()
@@ -599,7 +596,7 @@ def main():
 
         judge_view = st.selectbox(
             "분석 내용 선택",
-            ["📊 EDA", "📈 회귀분석", "💡 공략법"],
+            ["📊 EDA", "📈 회귀분석", "💡 결과 해석"],
             key="judge_view",
         )
 
@@ -609,7 +606,7 @@ def main():
                 st.subheader("안성재 심사위원")
                 fig_an = plot_pass_rate(df[df['is_an'] == 1], 'an', '안성재')
                 st.pyplot(fig_an)
-                st.caption("📝 **해석**: 각 막대의 높이는 합격률을 의미합니다. 안성재 심사위원은 특정 조리법(조림 등)에서 확연히 높은 합격률을 보이는 경향이 있습니다.")
+                st.caption("📝 **해석**: 막대 높이는 관찰된 합격률입니다. 상세 통계표에서 각 막대의 시도 횟수를 함께 확인하세요.")
 
                 # 안성재 통계표
                 with st.expander("📊 상세 통계표 (시도 횟수 포함)"):
@@ -623,7 +620,7 @@ def main():
                 st.subheader("백종원 심사위원")
                 fig_back = plot_pass_rate(df[df['is_back'] == 1], 'back', '백종원')
                 st.pyplot(fig_back)
-                st.caption("📝 **해석**: 백종원 심사위원은 퓨전 및 다양한 조리법에서 상대적으로 고른 합격률을 보이지만, 특정 '맛'의 포인트(예: 중식 튀김)를 선호함을 알 수 있습니다.")
+                st.caption("📝 **해석**: 조리법별 합격률을 비교할 때 표본 수와 라운드 차이를 함께 고려하세요.")
 
                 # 백종원 통계표
                 with st.expander("📊 상세 통계표 (시도 횟수 포함)"):
@@ -645,7 +642,7 @@ def main():
             """)
 
         elif judge_view == "📈 회귀분석":
-            st.warning("⚠️ **주의사항**: 표본이 적어 회귀 진단이 맞지않기에 정확한 모델링이 아니며 재미로 보길 바랍니다.")
+            st.warning("⚠️ 표본이 작고 일부 모형은 수렴하지 않을 수 있습니다. 회귀계수와 p값은 탐색용으로만 보세요.")
             col_l, col_r = st.columns(2)
 
             model_an, X_an, y_an = run_logistic_regression(df, 'an')
@@ -655,8 +652,8 @@ def main():
                 st.markdown("##### 📋 통계 분석 결과표")
                 st.dataframe(summary_an.style.map(lambda x: 'background-color: yellow' if x < 0.05 else '', subset=['P-value']), height=400)
                 st.info("""💡 **결과 해석 가이드**:
-- **P-value (노란색)**: 0.05 미만이면 결과가 통계적으로 매우 유의미함을 뜻합니다.
-- **Odds Ratio**: 1보다 크면 합격 확률을 **높이는** 요인, 1보다 작으면 **낮추는** 요인입니다.""")
+- **P-value**: 작은 표본과 모형 수렴 문제 때문에 확정적 근거로 쓰기 어렵습니다.
+- **Odds Ratio**: 1보다 크거나 작으면 모형에서 관찰된 연관 방향을 뜻하며, 인과 효과는 아닙니다.""")
 
                 if X_an is not None:
                     with st.expander("다중공선성(VIF) 진단"):
@@ -683,8 +680,8 @@ def main():
                 st.markdown("##### 📋 통계 분석 결과표")
                 st.dataframe(summary_back.style.map(lambda x: 'background-color: yellow' if x < 0.05 else '', subset=['P-value']), height=400)
                 st.info("""💡 **결과 해석 가이드**:
-- **P-value (노란색)**: 이 값이 작을수록 해당 변수가 합격/불합격에 미치는 영향이 확실합니다.
-- **Odds Ratio**: 숫자가 클수록 해당 요리를 했을 때 합격할 확률이 압도적으로 높아집니다.""")
+- **P-value**: 작은 표본과 모형 수렴 문제 때문에 확정적 근거로 쓰기 어렵습니다.
+- **Odds Ratio**: 모형에서 관찰된 연관 방향과 크기이며, 요리법을 바꾸면 합격률이 달라진다는 뜻은 아닙니다.""")
 
                 if X_back is not None:
                     with st.expander("다중공선성(VIF) 진단"):
@@ -705,17 +702,22 @@ def main():
                     st.caption("🔎 **그래프 보는 법**: 데이터들(점들)이 위아래로 고르게 퍼져 있어야 좋은 모델입니다. 특정 패턴이 보이면 모델 개선이 필요할 수 있습니다.")
 
         else:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("### 🤵 안성재 심사위원")
-                st.success("✅ **필승**: 조림(Braising)")
-                st.error("❌ **필패**: 해산물")
-                st.info("💡 기본에 충실한 '조림'으로 깊은 맛을 어필하세요.")
-            with col2:
-                st.markdown("### 👨‍🍳 백종원 심사위원")
-                st.success("✅ **필승**: 튀김, 중식")
-                st.warning("⚠️ **선호**: 중식 스타일")
-                st.info("💡 '조림' 또는 '중식/튀김'으로 승부하세요.")
+            st.subheader("심사위원별 조리법 관찰 결과")
+            columns = st.columns(2)
+            for column, judge_flag, pass_flag, judge_name in zip(
+                columns, ['is_an', 'is_back'], ['an', 'back'], ['안성재', '백종원']
+            ):
+                with column:
+                    st.markdown(f"### {judge_name} 심사위원")
+                    judge_data = df[(df[judge_flag] == 1) & (df['how_cook'] != '-')]
+                    summary = judge_data.groupby('how_cook')[pass_flag].agg(
+                        시도='count', 합격='sum', 합격률='mean'
+                    ).reset_index()
+                    summary = summary[summary['시도'] >= 5].copy()
+                    summary['합격률 (%)'] = (summary.pop('합격률') * 100).round(1)
+                    summary = summary.rename(columns={'how_cook': '조리법'})
+                    st.dataframe(summary.sort_values('합격률 (%)', ascending=False), hide_index=True, use_container_width=True)
+            st.caption("시도 5건 이상인 조리법만 표시합니다. 라운드·재료·참가자가 서로 달라 합격률 차이를 심사위원의 선호나 필승 전략으로 해석할 수 없습니다.")
 
     # === 방송 효과 분석 (5번 메뉴) ===
     elif menu == "📊 방송효과분석":
