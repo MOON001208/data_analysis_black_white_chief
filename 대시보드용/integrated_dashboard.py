@@ -345,7 +345,6 @@ def main():
 
     # === 쉐프 트렌드 (2번 메뉴) ===
     elif menu == "📈 쉐프 검색 트렌드 분석":
-        set_korean_font()
         st.header("📈 쉐프 검색 트렌드 분석")
         st.info("""
         **💡 이 대시보드는?**
@@ -411,37 +410,43 @@ def main():
             plot_df = plot_df[plot_df['Source'].isin(selected_sources)]
 
 
-        # 소스명 변경 (datalab -> Naver)
-        plot_df['Source'] = plot_df['Source'].replace('datalab', 'Naver')
-
         if not plot_df.empty:
-            color_palette = {'google': 'blue', 'Naver': 'green', 'youtube': 'red'}
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
 
-            fig = sns.relplot(
-                data=plot_df, x="Date", y="Value", hue="Source", col="Chef",
-                kind="line", palette=color_palette,
-                col_wrap=3, height=4, aspect=1.5,
-                facet_kws={'sharey': False, 'sharex': True},
-                errorbar=None  # 오차범위(그림자) 제거 (ci=None deprecated in new seaborn)
+            chefs = sorted(plot_df['Chef'].unique())
+            cols_per_row = 3
+            rows = (len(chefs) + cols_per_row - 1) // cols_per_row
+            fig = make_subplots(rows=rows, cols=cols_per_row, subplot_titles=chefs)
+            source_labels = {'datalab': 'Naver', 'google': 'Google', 'youtube': 'YouTube'}
+            source_colors = {'datalab': 'green', 'google': 'blue', 'youtube': 'red'}
+
+            for index, chef in enumerate(chefs):
+                row, col = divmod(index, cols_per_row)
+                row += 1
+                col += 1
+                chef_data = plot_df[plot_df['Chef'] == chef]
+                for source in selected_sources or all_sources:
+                    series = chef_data[chef_data['Source'] == source].sort_values('Date')
+                    if series.empty:
+                        continue
+                    fig.add_trace(go.Scatter(
+                        x=series['Date'], y=series['Value'], mode='lines',
+                        name=source_labels[source], legendgroup=source,
+                        showlegend=index == 0, line_color=source_colors[source],
+                    ), row=row, col=col)
+
+                elim_date = elimination_info.get(chef)
+                if elim_date is not None and plot_df['Date'].min() <= elim_date <= plot_df['Date'].max():
+                    fig.add_vline(x=elim_date, line_color='red', line_dash='dash', row=row, col=col)
+
+            fig.update_layout(
+                height=max(390, rows * 340),
+                margin=dict(l=35, r=20, t=75, b=30),
+                legend=dict(orientation='h', y=1.08),
+                hovermode='x',
             )
-
-            # 각 쉐프별로 탈락 시점 및 기간 표시
-            for ax in fig.axes.flat:
-                chef_title = ax.get_title().replace('Chef = ', '')
-                ax.set_title(f'Chef = {chef_title}')
-
-                if chef_title in elimination_info:
-                    elim_date = elimination_info[chef_title]
-                    # 탈락 시점이 표시 범위 내에 있을 때만 표시
-                    if pd.Timestamp('2025-12-09') <= elim_date <= pd.Timestamp('2026-01-20'):
-                        ax.axvline(x=elim_date, color='red', linestyle='--', linewidth=2, alpha=0.7)
-                        y_max = ax.get_ylim()[1]
-                        ax.text(elim_date, y_max * 0.95, '탈락', rotation=0,
-                               horizontalalignment='right', verticalalignment='top', color='red', fontsize=9, fontweight='bold')
-                ax.tick_params(axis='x', rotation=45)
-
-            st.pyplot(fig.fig)
-            plt.close(fig.fig)
+            st.plotly_chart(fig, use_container_width=True)
             st.caption("구글·유튜브는 셰프·날짜별 3개 관측값의 평균, 네이버는 1개 관측값입니다. 플랫폼별 지수는 기준이 달라 절대값을 직접 비교하지 마세요.")
 
             st.markdown("""
