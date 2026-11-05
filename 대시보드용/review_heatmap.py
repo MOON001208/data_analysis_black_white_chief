@@ -24,7 +24,8 @@ def create_review_heatmap(
     value_column: str = 'change_rate',
     title: str = '흑백요리사2 방영일별 리뷰 변화 히트맵',
     min_reviews: int = 3,  # 최소 리뷰 수 필터
-    clip_range: tuple = (-100, 150)  # 증가율 클리핑 범위
+    clip_range: tuple = (-100, 150),  # 증가율 클리핑 범위
+    max_restaurants: Optional[int] = None,
 ) -> go.Figure:
     """리뷰 변화 히트맵 생성"""
     # 최소 리뷰 수 필터링
@@ -32,7 +33,10 @@ def create_review_heatmap(
     df_filtered['total_reviews'] = df_filtered['before_count'] + df_filtered['after_count']
     
     valid_restaurants = df_filtered.groupby('restaurant')['total_reviews'].sum()
-    valid_restaurants = valid_restaurants[valid_restaurants >= min_reviews].index.tolist()
+    valid_restaurants = valid_restaurants[valid_restaurants >= min_reviews].sort_values(ascending=False)
+    if max_restaurants is not None:
+        valid_restaurants = valid_restaurants.head(max_restaurants)
+    valid_restaurants = valid_restaurants.index.tolist()
     df_filtered = df_filtered[df_filtered['restaurant'].isin(valid_restaurants)]
     
     if len(df_filtered) == 0:
@@ -47,29 +51,32 @@ def create_review_heatmap(
         df_filtered['value'] = df_filtered[value_column]
     
     pivot = df_filtered.pivot(index='restaurant', columns='episode', values='value')
+    display_pivot = df_filtered.pivot(index='restaurant', columns='episode', values=value_column)
     
     # 셰프 정보 매핑
     if df_restaurants is not None:
         chef_map = df_restaurants.set_index('restaurant')['chief_info'].to_dict()
-        pivot.index = pivot.index.map(
+        labels = pivot.index.map(
             lambda x: f"{chef_map.get(x, '')} ({x})" if chef_map.get(x) else x
         )
+        pivot.index = labels
+        display_pivot.index = labels
     
     # 컬럼명 변경
     episode_labels = [f"{i}회 ({bd[5:]})" for i, bd in enumerate(BROADCAST_DATES, 1)]
     pivot.columns = episode_labels
-    pivot = pivot.fillna(0)
+    display_pivot.columns = episode_labels
     
     # 히트맵 생성 - RdBu 색상으로 명확하게
     # 표시 형식 결정 (증가율이면 %, 증가 수면 개수)
     if value_column == 'change_rate':
-        text_display = [[f"{int(v)}%" for v in row] for row in pivot.values]
-        hover_template = '<b>%{y}</b><br>%{x}: %{z:.1f}%<extra></extra>'
+        text_display = [[f"{v:.0f}%" if pd.notna(v) else "" for v in row] for row in display_pivot.values]
+        hover_template = '<b>%{y}</b><br>%{x}: %{customdata:.1f}%<extra></extra>'
         colorbar_title = '증가율 (%)'
         colorbar_tickvals = [-100, -50, 0, 50, 100, 150]
         colorbar_ticktext = ['-100%', '-50%', '0%', '+50%', '+100%', '+150%']
     else:
-        text_display = [[f"{int(v)}" for v in row] for row in pivot.values]
+        text_display = [[f"{v:.0f}" if pd.notna(v) else "" for v in row] for row in display_pivot.values]
         hover_template = '<b>%{y}</b><br>%{x}: %{z:.0f}개<extra></extra>'
         colorbar_title = '증가 수 (개)'
         max_count = int(pivot.values.max())
@@ -78,6 +85,7 @@ def create_review_heatmap(
 
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values,
+        customdata=display_pivot.values,
         x=pivot.columns,
         y=pivot.index,
         colorscale='RdBu_r',  # 빨강-흰색-파랑 (역순이라 빨강=증가)

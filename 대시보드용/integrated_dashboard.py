@@ -9,11 +9,6 @@ import numpy as np
 import sys
 import os
 import platform
-import matplotlib.pyplot as plt
-import seaborn as sns
-import statsmodels.api as sm
-
-from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # 모듈 경로 추가
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,31 +32,17 @@ def get_data_path(filename):
     return data_path  # 기본값
 
 from data_processor import (
-    load_reviews, 
-    load_population, 
     load_restaurants,
-    calculate_review_changes,
-    get_daily_population_by_district,
     BROADCAST_DATES
 )
-from review_heatmap import (
-    create_review_heatmap,
-    create_review_bar_chart,
-    get_top_restaurants_by_change
-)
-from population_animated_map import (
-    load_seoul_geojson,
-    create_animated_population_map,
-    create_broadcast_comparison_map,
-    create_static_choropleth
-)
-from supabase_data_loader import load_chef_survival_results_from_supabase, load_trend_data_from_supabase
 
 # === 한글 폰트 설정 ===
 def set_korean_font():
     """한글 폰트 설정 (Windows/Mac/Linux 호환)"""
+    global plt, sns
+    import matplotlib.pyplot as plt
     import matplotlib.font_manager as fm
-    import matplotlib as mpl
+    import seaborn as sns
 
     system_name = platform.system()
 
@@ -81,20 +62,6 @@ def set_korean_font():
             font_name = 'AppleGothic'
     else:
         # Linux (Streamlit Cloud) - 나눔고딕
-        # matplotlib 캐시 완전 삭제
-        try:
-            cache_dir = mpl.get_cachedir()
-            if cache_dir and os.path.exists(cache_dir):
-                import shutil
-                for file in os.listdir(cache_dir):
-                    if file.startswith('fontlist'):
-                        try:
-                            os.remove(os.path.join(cache_dir, file))
-                        except:
-                            pass
-        except:
-            pass
-
         font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
         if os.path.exists(font_path):
             # 폰트 매니저에 명시적으로 추가
@@ -121,8 +88,6 @@ def set_korean_font():
     sns.set_style("whitegrid")
     sns.set_palette("bright")
     sns.set(font=font_name, rc={'axes.unicode_minus': False})
-
-set_korean_font()
 
 # === 페이지 설정 ===
 st.set_page_config(
@@ -166,18 +131,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # === 데이터 캐싱 ===
-@st.cache_data
-def load_all_data():
-    """모든 데이터 로드"""
-    reviews = load_reviews()
-    population = load_population()
-    restaurants = load_restaurants()
-    return reviews, population, restaurants
+@st.cache_data(show_spinner=False)
+def load_review_changes():
+    """Load precomputed restaurant and episode review counts."""
+    return pd.read_csv(get_data_path('review_changes.csv'))
+
+@st.cache_data(show_spinner=False)
+def load_daily_population():
+    """Load precomputed daily district totals instead of the 38 MB raw CSV."""
+    df = pd.read_csv(get_data_path('daily_population_by_district.csv'))
+    df['date'] = pd.to_datetime(df['date'])
+    return df
+
+@st.cache_data(show_spinner=False)
+def load_restaurant_details():
+    return load_restaurants()
+
+@st.cache_data(show_spinner=False)
+def load_survival_results():
+    """This frozen portfolio snapshot matches the published survival table."""
+    return pd.read_csv(get_data_path('셰프서바이벌결과요약.csv'))
 
 @st.cache_data
 def load_survival_data():
     """서바이벌 데이터 로드"""
-    df = load_chef_survival_results_from_supabase()
+    df = load_survival_results()
     if df is None or df.empty:
         return None
     df_clean = df[df['food'] != '-'].copy()
@@ -186,7 +164,7 @@ def load_survival_data():
 @st.cache_data
 def load_genre_survival_data():
     """요리 장르별 생존율 데이터"""
-    df = load_chef_survival_results_from_supabase()
+    df = load_survival_results().copy()
     if df is None or df.empty:
         return None
     df['is_survived'] = df['is_alive'].apply(lambda x: 1 if x in ['생존'] else 0)
@@ -208,6 +186,7 @@ def load_chef_survival_data():
 @st.cache_resource
 def get_geojson():
     """GeoJSON 로드"""
+    from population_animated_map import load_seoul_geojson
     return load_seoul_geojson()
 
 # === 쉐프 매핑 ===
@@ -263,6 +242,7 @@ def create_pass_rate_summary(df, judge_col):
 
 def run_logistic_regression(df, target_col):
     """로지스틱 회귀분석"""
+    import statsmodels.api as sm
     if target_col == 'an':
         sub_df = df[df['is_an'] == 1].copy()
     else:
@@ -280,6 +260,7 @@ def run_logistic_regression(df, target_col):
 
 def calculate_vif(X):
     """다중공선성 계산"""
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
     vif_data = pd.DataFrame()
     vif_data["Feature"] = X.columns
     vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
@@ -296,36 +277,12 @@ def create_summary_df(model):
     })
     return summary_df.sort_values(by="P-value")
 
+@st.cache_data(show_spinner=False)
 def load_trend_data():
-    """트렌드 데이터 로드 (Only Supabase)"""
-    # 모든 소스(datalab, Google, YouTube)가 DB에 저장되어 있다고 가정
-    df = load_trend_data_from_supabase()
-    
-    if df.empty:
-        return pd.DataFrame()
-        
-    # Supabase 컬럼 -> 대시보드 컬럼 매핑 (한글 -> 영문)
-    column_mapping = {
-        '출연자': 'Chef',
-        '날짜': 'Date',
-        '값': 'Value',
-        '소스': 'Source'
-    }
-    
-    # 필요한 컬럼 확인
-    if not all(col in df.columns for col in column_mapping.keys()):
-        return df
-
-    final_df = df.rename(columns=column_mapping)
-    
-    # 데이터 타입 변환
-    final_df['Date'] = pd.to_datetime(final_df['Date'])
-    final_df['Value'] = pd.to_numeric(final_df['Value'], errors='coerce')
-    
-    # 이름 통합 (술 빚는 윤주모 -> 윤주모)
-    final_df['Chef'] = final_df['Chef'].replace('술 빚는 윤주모', '윤주모')
-    
-    return final_df
+    """Load the complete, frozen trend snapshot without an API request."""
+    df = pd.read_csv(get_data_path('trend_snapshot.csv'))
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
 
 # === 메인 화면 ===
 def main():
@@ -378,8 +335,17 @@ def main():
         - 🎯 심사위원별 합격 공략법
         """)
 
+        changes = load_review_changes()
+        episode_delta = changes.groupby('episode')['change_count'].sum()
+        st.subheader("한눈에 보는 리뷰 변화")
+        st.caption("각 회차 공개일 전후 7일간 출연 가게의 리뷰 건수 차이입니다. 관찰된 변화이며 방송의 인과 효과로 해석할 수 없습니다.")
+        cols = st.columns(len(episode_delta))
+        for col, (episode, delta) in zip(cols, episode_delta.items()):
+            col.metric(f"{episode}회", f"{delta:+,}건")
+
     # === 쉐프 트렌드 (2번 메뉴) ===
     elif menu == "📈 쉐프 검색 트렌드 분석":
+        set_korean_font()
         st.header("📈 쉐프 검색 트렌드 분석")
         st.info("""
         **💡 이 대시보드는?**
@@ -475,6 +441,8 @@ def main():
                 ax.tick_params(axis='x', rotation=45)
 
             st.pyplot(fig.fig)
+            plt.close(fig.fig)
+            st.caption("구글·유튜브는 셰프·날짜별 3개 관측값의 평균, 네이버는 1개 관측값입니다. 플랫폼별 지수는 기준이 달라 절대값을 직접 비교하지 마세요.")
 
             st.markdown("""
             **🎨 색상 가이드:**
@@ -504,6 +472,7 @@ def main():
 
     # === 장르별 생존율 (3번 메뉴) ===
     elif menu == "📊 라운드 × 장르별 생존율 분석":
+        set_korean_font()
         st.header("📊 요리 장르별 생존율 분석")
         st.info("""
         **💡 이 대시보드는?**
@@ -516,9 +485,13 @@ def main():
             st.error("데이터를 찾을 수 없습니다.")
             return
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📈 라운드별", "🏆 최고 생존율", "⚔️ 경기 유형", "📝 결론"])
+        genre_view = st.selectbox(
+            "분석 내용 선택",
+            ["📈 라운드별", "🏆 최고 생존율", "⚔️ 경기 유형", "📝 결론"],
+            key="genre_view",
+        )
 
-        with tab1:
+        if genre_view == "📈 라운드별":
             st.subheader("라운드 × 장르별 생존율 분석")
             st.markdown("""
             각 라운드에서 어떤 요리 장르가 강세를 보였는지 확인하기 위해 교차 분석표를 생성합니다.
@@ -540,7 +513,7 @@ def main():
             st.pyplot(fig)
             st.caption("🔎 **그래프 보는 법**: 초록색이 짙을수록 생존율이 높습니다. 빨간색에 가까울수록 생존율이 낮습니다.")
 
-        with tab2:
+        elif genre_view == "🏆 최고 생존율":
             st.subheader("라운드별 최고 생존율 장르")
             st.markdown("""
             각 라운드에서 **가장 높은 생존율**을 기록한 요리 장르를 요약합니다.
@@ -566,7 +539,7 @@ def main():
             df_best = pd.DataFrame(best_performers)
             st.dataframe(df_best, use_container_width=True)
 
-        with tab3:
+        elif genre_view == "⚔️ 경기 유형":
             st.subheader("경기 유형(팀전 vs 개인전)별 분석")
             st.markdown("""
             '개인전'과 '팀전'에서 특정 요리 장르가 더 유리하게 작용하는지 분석합니다.
@@ -591,7 +564,7 @@ def main():
             st.pyplot(fig)
             st.caption("🔎 **그래프 보는 법**: 막대 높이가 높을수록 해당 장르의 생존율이 높습니다.")
 
-        with tab4:
+        else:
             st.markdown("""
             ### 🔍 주요 인사이트
 
@@ -606,6 +579,7 @@ def main():
 
     # === 심사위원 예측 (4번 메뉴) ===
     elif menu == "🏁 심사위원 합격 예측 분석":
+        set_korean_font()
         st.header("🏁 심사위원 합격 예측 분석")
         st.info("""
         **💡 이 대시보드는?**
@@ -618,9 +592,13 @@ def main():
             st.error("데이터를 찾을 수 없습니다.")
             return
 
-        tab1, tab2, tab3 = st.tabs(["📊 EDA", "📈 회귀분석", "💡 공략법"])
+        judge_view = st.selectbox(
+            "분석 내용 선택",
+            ["📊 EDA", "📈 회귀분석", "💡 공략법"],
+            key="judge_view",
+        )
 
-        with tab1:
+        if judge_view == "📊 EDA":
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("안성재 심사위원")
@@ -661,7 +639,7 @@ def main():
             💡 **Tip**: 아래 '📊 상세 통계표'를 열어보면 각 조건별 **총 시도 횟수**와 **합격 횟수**를 확인할 수 있습니다.
             """)
 
-        with tab2:
+        elif judge_view == "📈 회귀분석":
             st.warning("⚠️ **주의사항**: 표본이 적어 회귀 진단이 맞지않기에 정확한 모델링이 아니며 재미로 보길 바랍니다.")
             col_l, col_r = st.columns(2)
 
@@ -721,7 +699,7 @@ def main():
                     st.pyplot(fig_res_b)
                     st.caption("🔎 **그래프 보는 법**: 데이터들(점들)이 위아래로 고르게 퍼져 있어야 좋은 모델입니다. 특정 패턴이 보이면 모델 개선이 필요할 수 있습니다.")
 
-        with tab3:
+        else:
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("### 🤵 안성재 심사위원")
@@ -739,12 +717,6 @@ def main():
         st.markdown('<p class="main-header">📊 흑백요리사 방송 효과 분석</p>', unsafe_allow_html=True)
         st.markdown('<p class="sub-header">방영일 기준 7일 전후 리뷰 및 유동인구 변화</p>', unsafe_allow_html=True)
 
-        with st.spinner("데이터 로드 중..."):
-            reviews, population, restaurants = load_all_data()
-            review_changes = calculate_review_changes(reviews)
-            daily_pop = get_daily_population_by_district(population)
-            geojson = get_geojson()
-
         # 탭 선택 (selectbox 방식으로 변경 - Streamlit Cloud 호환성 개선)
         broadcast_tab_selection = st.selectbox(
             "분석 내용 선택",
@@ -756,6 +728,9 @@ def main():
         st.divider()
 
         if broadcast_tab_selection == "📊 리뷰 히트맵":
+            from review_heatmap import create_review_heatmap, get_top_restaurants_by_change
+            review_changes = load_review_changes()
+            restaurants = load_restaurant_details()
             st.header("📊 방영일별 리뷰 변화")
             st.info("""
             **💡 이 대시보드는?**
@@ -776,13 +751,17 @@ def main():
                 key="episode_tab1"
             )
 
+            episode_changes = review_changes[review_changes['episode'] == selected_episode_tab1]
+            valid_rates = episode_changes.loc[episode_changes['before_count'] > 0, 'change_rate']
+
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("분석 가게", len(review_changes['restaurant'].unique()))
+                st.metric("분석 가게", episode_changes['restaurant'].nunique())
             with col2:
-                st.metric("평균 증가율", f"{review_changes['change_rate'].mean():.1f}%")
+                st.metric("리뷰 건수 변화", f"{episode_changes['change_count'].sum():+,}건")
             with col3:
-                st.metric("최대 증가율", f"{review_changes['change_rate'].max():.1f}%")
+                st.metric("증가율 중앙값", f"{valid_rates.median():+.1f}%")
+            st.caption(f"선택한 회차의 전후 7일 비교입니다. 증가율 중앙값은 방영 전 리뷰가 1건 이상인 가게 {len(valid_rates)}곳 기준입니다.")
 
             st.divider()
 
@@ -796,12 +775,13 @@ def main():
 
             # 계산 공식 설명
             if value_option == 'change_rate':
-                st.caption("📐 **계산 공식**: (방영 후 리뷰 수 - 방영 전 리뷰 수) ÷ 방영 전 리뷰 수 × 100 → 상대적 성장률을 보여줍니다")
+                st.caption("📐 **계산 공식**: (방영 후 리뷰 수 - 방영 전 리뷰 수) ÷ 방영 전 리뷰 수 × 100. 방영 전 0건은 증가율을 계산할 수 없어 빈칸으로 표시합니다.")
             else:
                 st.caption("📐 **계산 공식**: 방영 후 리뷰 수 - 방영 전 리뷰 수 → 실제로 늘어난 리뷰 개수를 보여줍니다")
 
-            fig_heatmap = create_review_heatmap(review_changes, restaurants, value_column=value_option, min_reviews=0)
+            fig_heatmap = create_review_heatmap(review_changes, restaurants, value_column=value_option, min_reviews=0, max_restaurants=30)
             st.plotly_chart(fig_heatmap, use_container_width=True)
+            st.caption("가독성을 위해 전체 102곳 중 분석 기간 리뷰 수 상위 30곳을 표시합니다. 모든 가게는 '가게 분석'에서 확인할 수 있습니다.")
 
             st.subheader("🏆 리뷰 증가율 TOP 10")
             top10 = get_top_restaurants_by_change(review_changes, episode=selected_episode_tab1, top_n=10)
@@ -814,6 +794,14 @@ def main():
             )
 
         elif broadcast_tab_selection == "🗺️ 유동인구 지도":
+            from population_animated_map import (
+                create_animated_population_map,
+                create_broadcast_comparison_map,
+                create_static_choropleth,
+            )
+            daily_pop = load_daily_population()
+            restaurants = load_restaurant_details()
+            geojson = get_geojson()
             st.header("🗺️ 서울시 유동인구 변화 지도")
             st.info("""
             **💡 이 대시보드는?**
@@ -822,6 +810,8 @@ def main():
             - 📊 **변화율 지도**: 방영 전후 유동인구 증감률 비교 (빨강=증가, 파랑=감소)
             - ★ **회색 마커**: 흑백요리사 출연 가게 위치
             """)
+            coverage = daily_pop.groupby('date')['district'].nunique()
+            st.caption(f"자료 범위: {daily_pop['date'].min():%Y-%m-%d} ~ {daily_pop['date'].max():%Y-%m-%d}. 일별 자치구 관측은 {coverage.min()}~{coverage.max()}곳/25곳이며, 센서 관측 수가 달라 단순 합계의 전후 비교에는 주의가 필요합니다.")
 
             map_type = st.radio(
                 "지도 유형",
@@ -832,6 +822,7 @@ def main():
                     'static': '📍 특정 날짜'
                 }[x],
                 horizontal=True,
+                index=1,
                 key="map_type_tab2"
             )
 
@@ -842,7 +833,7 @@ def main():
                 all_dates = sorted(daily_pop['date'].unique())
                 date_range_tab2 = st.date_input(
                     "분석 기간",
-                    value=(all_dates[0], all_dates[-1]),
+                    value=(all_dates[0], all_dates[min(13, len(all_dates) - 1)]),
                     min_value=all_dates[0],
                     max_value=all_dates[-1],
                     key="date_range_tab2"
@@ -870,7 +861,7 @@ def main():
 
                 broadcast_date = BROADCAST_DATES[selected_episode_tab2 - 1]
                 st.info(f"📊 방영일 {broadcast_date} 기준 7일 전후 변화율")
-                fig_comp = create_broadcast_comparison_map(population, restaurants, broadcast_date, geojson)
+                fig_comp = create_broadcast_comparison_map(daily_pop, restaurants, broadcast_date, geojson)
                 st.plotly_chart(fig_comp, use_container_width=True)
 
             else:
@@ -880,7 +871,7 @@ def main():
                     value=pd.to_datetime(BROADCAST_DATES[0]),
                     key="date_tab2"
                 )
-                fig_static = create_static_choropleth(population, restaurants, str(selected_date_tab2), geojson)
+                fig_static = create_static_choropleth(daily_pop, restaurants, str(selected_date_tab2), geojson)
                 st.plotly_chart(fig_static, use_container_width=True)
             
             st.subheader("★ 흑백요리사 출연 가게")
@@ -889,6 +880,9 @@ def main():
             st.dataframe(rest_display, hide_index=True)
 
         elif broadcast_tab_selection == "📈 가게 분석":
+            from review_heatmap import create_review_bar_chart
+            review_changes = load_review_changes()
+            restaurants = load_restaurant_details()
             st.header("📈 개별 가게 분석")
             st.info("""
             **💡 이 대시보드는?**
@@ -928,7 +922,7 @@ def main():
     <div style="text-align: center; color: #888; font-size: 0.9rem;">
         흑백요리사 통합 분석 대시보드 v2.0<br>
         데이터 출처: 캐치테이블, 서울시 유동인구, 네이버/구글/유튜브<br>
-        분석 기간: 2025-12-09 ~ 2026-01-14
+        분석 기간: 2025-12-09 ~ 2026-01-20
     </div>
     """, unsafe_allow_html=True)
 
